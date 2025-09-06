@@ -499,13 +499,12 @@ const ClipboardPage = () => {
                 />
                 <label
                     htmlFor="file-upload"
-                    className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg cursor-pointer transition-colors text-sm sm:text-base min-h-[44px] touch-manipulation"
+                    className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg cursor-pointer transition-colors text-sm sm:text-base min-h-[44px] touch-manipulation justify-center"
                 >
                     <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
                     <span className="hidden sm:inline">Choose Image</span>
-                    <span className="sm:hidden">+</span>
                 </label>
                 <p className="text-xs text-gray-400 mt-1 text-center">Max 400 KB</p>
             </div>
@@ -529,8 +528,8 @@ const ClipboardPage = () => {
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-5 h-5 sm:w-6 sm:h-6 border border-red-500 rounded-full opacity-60"></div>
                 </div>
             </div>
-            
-            <div className="absolute bottom-2 left-2 sm:bottom-4 sm:left-4 bg-gray-900/90 p-2 sm:p-3 rounded-lg shadow-lg text-gray-300 text-xs sm:text-sm max-w-[calc(100vw-120px)] sm:max-w-none">
+
+            <div className="absolute bottom-32 left-2 sm:bottom-4 sm:left-4 bg-gray-900/90 p-2 sm:p-3 rounded-lg shadow-lg text-gray-300 text-xs sm:text-sm max-w-[calc(100vw-120px)] sm:max-w-none">
                 <p className="hidden sm:block">Use D-pad or drag the background to pan.</p>
                 <p className="sm:hidden">Drag to pan or use D-pad.</p>
                 <p className="hidden sm:block">Drop images or use &quot;Choose Image&quot; button.</p>
@@ -558,7 +557,7 @@ const ClipboardPage = () => {
             </div>
 
             {/* --- Directional Movement Controls (D-pad style) --- */}
-            <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 bg-gray-900/90 p-2 rounded-lg shadow-lg">
+            <div className="absolute bottom-32 right-2 sm:bottom-4 sm:right-4 bg-gray-900/90 p-2 rounded-lg shadow-lg">
                 <div className="relative w-20 h-20 sm:w-24 sm:h-24">
                     {/* Up Button */}
                     <button
