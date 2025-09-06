@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Image from 'next/image';
 // Correcting the import path to be an absolute path from the root of the app directory
 import { client, account, databases, storage, ID, Query, Permission, Role } from '../appwrite';
 
@@ -465,11 +466,14 @@ const ClipboardPage = () => {
                             maxHeight: '120px',
                         }}
                     >
-                         <img
+                         <Image
                             src={image.src}
                             alt="user upload"
+                            width={120}
+                            height={120}
                             className="pointer-events-none w-full h-full object-contain"
                             style={{ maxWidth: '120px', maxHeight: '120px' }}
+                            unoptimized={true}
                         />
                     </div>
                 ))}
@@ -529,7 +533,7 @@ const ClipboardPage = () => {
             <div className="absolute bottom-2 left-2 sm:bottom-4 sm:left-4 bg-gray-900/90 p-2 sm:p-3 rounded-lg shadow-lg text-gray-300 text-xs sm:text-sm max-w-[calc(100vw-120px)] sm:max-w-none">
                 <p className="hidden sm:block">Use D-pad or drag the background to pan.</p>
                 <p className="sm:hidden">Drag to pan or use D-pad.</p>
-                <p className="hidden sm:block">Drop images or use "Choose Image" button.</p>
+                <p className="hidden sm:block">Drop images or use &quot;Choose Image&quot; button.</p>
                 <p className="sm:hidden">Drop/choose images at crosshair.</p>
                 <p className="text-yellow-400">Max file size: 400 KB</p>
                 <p className="mt-1 sm:mt-2 text-blue-400 font-mono text-xs">
