@@ -272,11 +272,10 @@ const ClipboardPage = () => {
     };
 
     // --- Image Compression Utility ---
-    // FIX: Modified to return an object with the file and its dimensions
     const compressImage = (file, maxSizeKB = 400) => {
         return new Promise((resolve) => {
             if (typeof window === 'undefined') {
-                resolve({ file, width: null, height: null }); // Return original file on server side
+                resolve(file); // Return original file on server side
                 return;
             }
             
@@ -315,8 +314,7 @@ const ClipboardPage = () => {
                                 type: 'image/jpeg',
                                 lastModified: Date.now()
                             });
-                            // FIX: Resolve with file and its dimensions
-                            resolve({ file: compressedFile, width: Math.round(finalWidth), height: Math.round(finalHeight) });
+                            resolve(compressedFile);
                         } else if (quality > 0.1) {
                             tryCompress(quality - 0.1, scale);
                         } else if (scale > 0.3) {
@@ -332,8 +330,7 @@ const ClipboardPage = () => {
                                     type: 'image/jpeg',
                                     lastModified: Date.now()
                                 });
-                                // FIX: Resolve with file and its dimensions
-                                resolve({ file: finalFile, width: 300, height: 300 });
+                                resolve(finalFile);
                             }, 'image/jpeg', 0.1);
                         }
                     }, 'image/jpeg', quality);
@@ -343,9 +340,8 @@ const ClipboardPage = () => {
             };
             
             htmlImg.onerror = () => {
-                // FIX: Resolve with null dimensions if image fails to load for compression
                 console.error("Failed to load image into memory for compression.");
-                resolve({ file: file, width: null, height: null });
+                resolve(file);
             };
             
             const reader = new FileReader();
@@ -391,8 +387,8 @@ const ClipboardPage = () => {
             const originalSizeKB = Math.round(fileToProcess.size / 1024);
             console.log(`Original image size: ${originalSizeKB} KB`);
             
-            // FIX: Destructure the returned object to get file, width, and height
-            const { file: compressedFile, width, height } = await compressImage(fileToProcess);
+            // Compress the image
+            const compressedFile = await compressImage(fileToProcess);
             const compressedSizeKB = Math.round(compressedFile.size / 1024);
             
             console.log(`Compressed image size: ${compressedSizeKB} KB`);
@@ -406,8 +402,7 @@ const ClipboardPage = () => {
                 return;
             }
 
-            // FIX: Pass dimensions to the upload function
-            await uploadImage(compressedFile, width, height);
+            await uploadImage(compressedFile);
             
         } catch (error) {
             console.error('Processing failed:', error);
@@ -420,8 +415,7 @@ const ClipboardPage = () => {
     };
 
     // --- Shared upload logic ---
-    // FIX: Updated function signature to accept width and height
-    const uploadImage = async (file, width, height) => {
+    const uploadImage = async (file) => {
         if (typeof window === 'undefined') return;
         if (!clipboardRef.current) return;
 
@@ -460,14 +454,13 @@ const ClipboardPage = () => {
                 permissions
             );
             
-            // FIX: Prepare document data, including width and height if available
+            // FIX: Prepare document data - only include basic required fields
+            // Width and height are not stored in the database to avoid schema issues
             const documentData = {
                 userId: 'anonymous',
                 fileId: fileResponse.$id,
                 x: Math.round(uploadX),
                 y: Math.round(uploadY),
-                ...(width && { width: Math.round(width) }),
-                ...(height && { height: Math.round(height) }),
             };
 
             await databases.createDocument(
@@ -595,8 +588,8 @@ const ClipboardPage = () => {
             const originalSizeKB = Math.round(fileToProcess.size / 1024);
             console.log(`Original dropped image size: ${originalSizeKB} KB`);
             
-            // FIX: Destructure the returned object to get file, width, and height
-            const { file: compressedFile, width, height } = await compressImage(fileToProcess);
+            // Compress the image
+            const compressedFile = await compressImage(fileToProcess);
             const compressedSizeKB = Math.round(compressedFile.size / 1024);
             
             console.log(`Compressed dropped image size: ${compressedSizeKB} KB`);
@@ -607,8 +600,7 @@ const ClipboardPage = () => {
                 return;
             }
             
-            // FIX: Pass dimensions to the upload function
-            await uploadImage(compressedFile, width, height);
+            await uploadImage(compressedFile);
             
         } catch (error) {
             console.error('Processing failed:', error);
@@ -650,22 +642,21 @@ const ClipboardPage = () => {
                         <img
                             src={image.src}
                             alt="user upload"
-                            // FIX: Add width and height attributes.
-                            // This allows the browser to reserve space before the image loads,
-                            // preventing the 0x0 render size issue on mobile.
-                            width={image.width}
-                            height={image.height}
+                            // Removed width/height attributes since we're not storing dimensions in DB
+                            // Let images load at their natural compressed size
                             className="pointer-events-none max-w-none max-h-none"
                             style={{ 
                                 display: 'block',
-                                // FIX: This min-width/height now acts as a fallback for older images
-                                // in your DB that don't have width/height attributes stored.
-                                minWidth: '50px',
-                                minHeight: '50px'
+                                // Set a reasonable max size to prevent huge images on the canvas
+                                maxWidth: '400px',
+                                maxHeight: '400px',
+                                // Maintain aspect ratio
+                                objectFit: 'contain'
                             }}
                             onLoad={(e) => {
                                 console.log('Image loaded successfully:', image.src);
                                 console.log('Image dimensions:', e.target.naturalWidth, 'x', e.target.naturalHeight);
+                                console.log('Displayed dimensions:', e.target.width, 'x', e.target.height);
                             }}
                             onError={(e) => {
                                 console.error('Failed to load image:', image.src);
