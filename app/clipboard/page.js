@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
+import heic2any from 'heic2any';
 // Correcting the import path to be an absolute path from the root of the app directory
 import { client, account, databases, storage, ID, Query, Permission, Role } from '../appwrite';
 
@@ -244,26 +245,172 @@ const ClipboardPage = () => {
         };
     }, []);
 
+    // --- HEIC Conversion Utility ---
+    const convertHeicToJpeg = async (file) => {
+        try {
+            const convertedBlob = await heic2any({
+                blob: file,
+                toType: "image/jpeg",
+                quality: 0.8
+            });
+            
+            // Create a new File from the converted blob
+            return new File([convertedBlob], file.name.replace(/\.heic$/i, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+            });
+        } catch (error) {
+            console.error('HEIC conversion failed:', error);
+            throw new Error('Failed to convert HEIC image');
+        }
+    };
+
+    // --- Image Compression Utility ---
+    const compressImage = (file, maxSizeKB = 400) => {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const htmlImg = new window.Image(); // Use window.Image to avoid conflict with Next.js Image
+            
+            htmlImg.onload = () => {
+                // Start with original dimensions
+                let { width, height } = htmlImg;
+                
+                // Calculate initial scale to keep images reasonable size
+                const maxDimension = 800; // Start with max 800px on longest side
+                if (width > maxDimension || height > maxDimension) {
+                    const scale = maxDimension / Math.max(width, height);
+                    width *= scale;
+                    height *= scale;
+                }
+                
+                // Set canvas size
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Function to try compression with different quality levels
+                const tryCompress = (quality, scale = 1) => {
+                    const finalWidth = width * scale;
+                    const finalHeight = height * scale;
+                    
+                    canvas.width = finalWidth;
+                    canvas.height = finalHeight;
+                    
+                    // Clear and draw image
+                    ctx.clearRect(0, 0, finalWidth, finalHeight);
+                    ctx.drawImage(htmlImg, 0, 0, finalWidth, finalHeight);
+                    
+                    // Convert to blob
+                    canvas.toBlob((blob) => {
+                        const sizeKB = blob.size / 1024;
+                        
+                        if (sizeKB <= maxSizeKB) {
+                            // Success! Convert blob to file
+                            const compressedFile = new File([blob], file.name, {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            resolve(compressedFile);
+                        } else if (quality > 0.1) {
+                            // Try lower quality
+                            tryCompress(quality - 0.1, scale);
+                        } else if (scale > 0.3) {
+                            // Try smaller dimensions
+                            tryCompress(0.8, scale - 0.1);
+                        } else {
+                            // Final attempt with very aggressive compression
+                            canvas.width = 300;
+                            canvas.height = 300;
+                            ctx.clearRect(0, 0, 300, 300);
+                            ctx.drawImage(htmlImg, 0, 0, 300, 300);
+                            
+                            canvas.toBlob((finalBlob) => {
+                                const finalFile = new File([finalBlob], file.name, {
+                                    type: 'image/jpeg',
+                                    lastModified: Date.now()
+                                });
+                                resolve(finalFile);
+                            }, 'image/jpeg', 0.1);
+                        }
+                    }, 'image/jpeg', quality);
+                };
+                
+                // Start compression attempt with 80% quality
+                tryCompress(0.8);
+            };
+            
+            htmlImg.onerror = () => {
+                // If image loading fails, return original file
+                resolve(file);
+            };
+            
+            // Load the image
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                htmlImg.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    };
+
     // --- File Upload Handler (for manual file selection) ---
     const handleFileSelect = async (event) => {
-        const file = event.target.files[0];
-        if (!file || !file.type.startsWith('image/')) {
-            alert('Please select a valid image file.');
+        const originalFile = event.target.files[0];
+        if (!originalFile) {
+            alert('Please select a valid file.');
             return;
         }
 
-        // Check file size (400 KB = 400 * 1024 bytes)
-        const maxFileSize = 400 * 1024; // 400 KB in bytes
-        if (file.size > maxFileSize) {
-            alert(`File too large! Please select an image smaller than 400 KB. Current file size: ${Math.round(file.size / 1024)} KB`);
-            // Clear the input
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
+        // Check if it's an image file (including HEIC)
+        const isImage = originalFile.type.startsWith('image/') || 
+                       originalFile.name.toLowerCase().endsWith('.heic') ||
+                       originalFile.name.toLowerCase().endsWith('.heif');
+        
+        if (!isImage) {
+            alert('Please select a valid image file (including HEIC/HEIF).');
+            return;
+        }
+
+        try {
+            let fileToProcess = originalFile;
+            
+            // Convert HEIC to JPEG first if needed
+            if (originalFile.name.toLowerCase().endsWith('.heic') || 
+                originalFile.name.toLowerCase().endsWith('.heif') ||
+                originalFile.type === 'image/heic' ||
+                originalFile.type === 'image/heif') {
+                
+                console.log('Converting HEIC/HEIF image...');
+                fileToProcess = await convertHeicToJpeg(originalFile);
+                console.log('HEIC conversion successful');
             }
-            return;
-        }
+            
+            // Show compression in progress
+            const originalSizeKB = Math.round(fileToProcess.size / 1024);
+            console.log(`Original image size: ${originalSizeKB} KB`);
+            
+            // Compress the image
+            const compressedFile = await compressImage(fileToProcess);
+            const compressedSizeKB = Math.round(compressedFile.size / 1024);
+            
+            console.log(`Compressed image size: ${compressedSizeKB} KB`);
+            
+            // Final size check (should be under 400KB now, but just in case)
+            const maxFileSize = 400 * 1024; // 400 KB in bytes
+            if (compressedFile.size > maxFileSize) {
+                alert(`Image still too large after compression: ${compressedSizeKB} KB. Please try a different image.`);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+                return;
+            }
 
-        await uploadImage(file);
+            await uploadImage(compressedFile);
+            
+        } catch (error) {
+            console.error('Processing failed:', error);
+            alert('Failed to process image. Please try again.');
+        }
         
         // Clear the input so the same file can be selected again
         if (fileInputRef.current) {
@@ -420,17 +567,53 @@ const ClipboardPage = () => {
         setIsDraggingOver(false);
         if (!clipboardRef.current) return;
 
-        const file = e.dataTransfer.files[0];
-        if (!file || !file.type.startsWith('image/')) return;
+        const originalFile = e.dataTransfer.files[0];
+        if (!originalFile) return;
 
-        // Check file size (400 KB = 400 * 1024 bytes)
-        const maxFileSize = 400 * 1024; // 400 KB in bytes
-        if (file.size > maxFileSize) {
-            alert(`File too large! Please select an image smaller than 400 KB. Current file size: ${Math.round(file.size / 1024)} KB`);
-            return;
+        // Check if it's an image file (including HEIC)
+        const isImage = originalFile.type.startsWith('image/') || 
+                       originalFile.name.toLowerCase().endsWith('.heic') ||
+                       originalFile.name.toLowerCase().endsWith('.heif');
+        
+        if (!isImage) return;
+
+        try {
+            let fileToProcess = originalFile;
+            
+            // Convert HEIC to JPEG first if needed
+            if (originalFile.name.toLowerCase().endsWith('.heic') || 
+                originalFile.name.toLowerCase().endsWith('.heif') ||
+                originalFile.type === 'image/heic' ||
+                originalFile.type === 'image/heif') {
+                
+                console.log('Converting dropped HEIC/HEIF image...');
+                fileToProcess = await convertHeicToJpeg(originalFile);
+                console.log('HEIC conversion successful');
+            }
+            
+            // Show compression in progress
+            const originalSizeKB = Math.round(fileToProcess.size / 1024);
+            console.log(`Original dropped image size: ${originalSizeKB} KB`);
+            
+            // Compress the image
+            const compressedFile = await compressImage(fileToProcess);
+            const compressedSizeKB = Math.round(compressedFile.size / 1024);
+            
+            console.log(`Compressed dropped image size: ${compressedSizeKB} KB`);
+            
+            // Final size check (should be under 400KB now, but just in case)
+            const maxFileSize = 400 * 1024; // 400 KB in bytes
+            if (compressedFile.size > maxFileSize) {
+                alert(`Image still too large after compression: ${compressedSizeKB} KB. Please try a different image.`);
+                return;
+            }
+
+            await uploadImage(compressedFile);
+            
+        } catch (error) {
+            console.error('Processing failed:', error);
+            alert('Failed to process dropped image. Please try again.');
         }
-
-        await uploadImage(file);
     };
     
     // --- Render Logic ---
@@ -492,7 +675,7 @@ const ClipboardPage = () => {
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"
@@ -506,7 +689,7 @@ const ClipboardPage = () => {
                     </svg>
                     <span className="hidden sm:inline">Choose Image</span>
                 </label>
-                <p className="text-xs text-gray-400 mt-1 text-center">Max 400 KB</p>
+                <p className="text-xs text-gray-400 mt-1 text-center">Supports HEIC + auto-compression</p>
             </div>
             
             <div className={`absolute inset-0 bg-blue-500/20 border-4 border-dashed border-blue-400 rounded-2xl transition-opacity pointer-events-none ${isDraggingOver ? 'opacity-100' : 'opacity-0'}`}>
@@ -534,7 +717,7 @@ const ClipboardPage = () => {
                 <p className="sm:hidden">Drag to pan or use D-pad.</p>
                 <p className="hidden sm:block">Drop images or use &quot;Choose Image&quot; button.</p>
                 <p className="sm:hidden">Drop/choose images at crosshair.</p>
-                <p className="text-yellow-400">Max file size: 400 KB</p>
+                <p className="text-yellow-400">Images auto-compressed to &lt;400KB</p>
                 <p className="mt-1 sm:mt-2 text-blue-400 font-mono text-xs">
                     Center: ({viewportCenter.x}, {viewportCenter.y})
                 </p>
