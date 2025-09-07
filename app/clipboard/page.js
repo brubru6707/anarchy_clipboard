@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import heic2any from 'heic2any';
 // Correcting the import path to be an absolute path from the root of the app directory
 import { client, account, databases, storage, ID, Query, Permission, Role } from '../appwrite';
 
@@ -247,13 +246,21 @@ const ClipboardPage = () => {
 
     // --- HEIC Conversion Utility ---
     const convertHeicToJpeg = async (file) => {
+        // Check if we're on the client side (this check is still good practice)
+        if (typeof window === 'undefined') {
+            return file; // Return original file on server side
+        }
+
         try {
+            // Dynamically import the library only when the function is called
+            const heic2any = (await import('heic2any')).default;
+
             const convertedBlob = await heic2any({
                 blob: file,
                 toType: "image/jpeg",
                 quality: 0.8
             });
-            
+
             // Create a new File from the converted blob
             return new File([convertedBlob], file.name.replace(/\.heic$/i, '.jpg'), {
                 type: 'image/jpeg',
@@ -268,6 +275,12 @@ const ClipboardPage = () => {
     // --- Image Compression Utility ---
     const compressImage = (file, maxSizeKB = 400) => {
         return new Promise((resolve) => {
+            // Check if we're on the client side
+            if (typeof window === 'undefined') {
+                resolve(file); // Return original file on server side
+                return;
+            }
+            
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const htmlImg = new window.Image(); // Use window.Image to avoid conflict with Next.js Image
@@ -355,6 +368,9 @@ const ClipboardPage = () => {
 
     // --- File Upload Handler (for manual file selection) ---
     const handleFileSelect = async (event) => {
+        // Check if we're on the client side
+        if (typeof window === 'undefined') return;
+        
         const originalFile = event.target.files[0];
         if (!originalFile) {
             alert('Please select a valid file.');
@@ -420,6 +436,8 @@ const ClipboardPage = () => {
 
     // --- Shared upload logic ---
     const uploadImage = async (file) => {
+        // Check if we're on the client side
+        if (typeof window === 'undefined') return;
         if (!clipboardRef.current) return;
 
         // Use the center crosshair position for manual uploads too
@@ -565,6 +583,9 @@ const ClipboardPage = () => {
     const handleDrop = async (e) => {
         e.preventDefault();
         setIsDraggingOver(false);
+        
+        // Check if we're on the client side
+        if (typeof window === 'undefined') return;
         if (!clipboardRef.current) return;
 
         const originalFile = e.dataTransfer.files[0];
