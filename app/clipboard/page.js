@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Image from 'next/image';
 // Correcting the import path to be an absolute path from the root of the app directory
 import { client, account, databases, storage, ID, Query, Permission, Role } from '../appwrite';
 
@@ -273,35 +272,31 @@ const ClipboardPage = () => {
     };
 
     // --- Image Compression Utility ---
+    // FIX: Modified to return an object with the file and its dimensions
     const compressImage = (file, maxSizeKB = 400) => {
         return new Promise((resolve) => {
-            // Check if we're on the client side
             if (typeof window === 'undefined') {
-                resolve(file); // Return original file on server side
+                resolve({ file, width: null, height: null }); // Return original file on server side
                 return;
             }
             
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-            const htmlImg = new window.Image(); // Use window.Image to avoid conflict with Next.js Image
+            const htmlImg = new window.Image();
             
             htmlImg.onload = () => {
-                // Start with original dimensions
                 let { width, height } = htmlImg;
                 
-                // Calculate initial scale to keep images reasonable size
-                const maxDimension = 800; // Start with max 800px on longest side
+                const maxDimension = 800;
                 if (width > maxDimension || height > maxDimension) {
                     const scale = maxDimension / Math.max(width, height);
                     width *= scale;
                     height *= scale;
                 }
                 
-                // Set canvas size
                 canvas.width = width;
                 canvas.height = height;
                 
-                // Function to try compression with different quality levels
                 const tryCompress = (quality, scale = 1) => {
                     const finalWidth = width * scale;
                     const finalHeight = height * scale;
@@ -309,29 +304,24 @@ const ClipboardPage = () => {
                     canvas.width = finalWidth;
                     canvas.height = finalHeight;
                     
-                    // Clear and draw image
                     ctx.clearRect(0, 0, finalWidth, finalHeight);
                     ctx.drawImage(htmlImg, 0, 0, finalWidth, finalHeight);
                     
-                    // Convert to blob
                     canvas.toBlob((blob) => {
                         const sizeKB = blob.size / 1024;
                         
                         if (sizeKB <= maxSizeKB) {
-                            // Success! Convert blob to file
                             const compressedFile = new File([blob], file.name, {
                                 type: 'image/jpeg',
                                 lastModified: Date.now()
                             });
-                            resolve(compressedFile);
+                            // FIX: Resolve with file and its dimensions
+                            resolve({ file: compressedFile, width: Math.round(finalWidth), height: Math.round(finalHeight) });
                         } else if (quality > 0.1) {
-                            // Try lower quality
                             tryCompress(quality - 0.1, scale);
                         } else if (scale > 0.3) {
-                            // Try smaller dimensions
                             tryCompress(0.8, scale - 0.1);
                         } else {
-                            // Final attempt with very aggressive compression
                             canvas.width = 300;
                             canvas.height = 300;
                             ctx.clearRect(0, 0, 300, 300);
@@ -342,22 +332,22 @@ const ClipboardPage = () => {
                                     type: 'image/jpeg',
                                     lastModified: Date.now()
                                 });
-                                resolve(finalFile);
+                                // FIX: Resolve with file and its dimensions
+                                resolve({ file: finalFile, width: 300, height: 300 });
                             }, 'image/jpeg', 0.1);
                         }
                     }, 'image/jpeg', quality);
                 };
                 
-                // Start compression attempt with 80% quality
                 tryCompress(0.8);
             };
             
             htmlImg.onerror = () => {
-                // If image loading fails, return original file
-                resolve(file);
+                // FIX: Resolve with null dimensions if image fails to load for compression
+                console.error("Failed to load image into memory for compression.");
+                resolve({ file: file, width: null, height: null });
             };
             
-            // Load the image
             const reader = new FileReader();
             reader.onload = (e) => {
                 htmlImg.src = e.target.result;
@@ -368,7 +358,6 @@ const ClipboardPage = () => {
 
     // --- File Upload Handler (for manual file selection) ---
     const handleFileSelect = async (event) => {
-        // Check if we're on the client side
         if (typeof window === 'undefined') return;
         
         const originalFile = event.target.files[0];
@@ -377,10 +366,9 @@ const ClipboardPage = () => {
             return;
         }
 
-        // Check if it's an image file (including HEIC)
         const isImage = originalFile.type.startsWith('image/') || 
-                       originalFile.name.toLowerCase().endsWith('.heic') ||
-                       originalFile.name.toLowerCase().endsWith('.heif');
+                          originalFile.name.toLowerCase().endsWith('.heic') ||
+                          originalFile.name.toLowerCase().endsWith('.heif');
         
         if (!isImage) {
             alert('Please select a valid image file (including HEIC/HEIF).');
@@ -390,7 +378,6 @@ const ClipboardPage = () => {
         try {
             let fileToProcess = originalFile;
             
-            // Convert HEIC to JPEG first if needed
             if (originalFile.name.toLowerCase().endsWith('.heic') || 
                 originalFile.name.toLowerCase().endsWith('.heif') ||
                 originalFile.type === 'image/heic' ||
@@ -401,18 +388,16 @@ const ClipboardPage = () => {
                 console.log('HEIC conversion successful');
             }
             
-            // Show compression in progress
             const originalSizeKB = Math.round(fileToProcess.size / 1024);
             console.log(`Original image size: ${originalSizeKB} KB`);
             
-            // Compress the image
-            const compressedFile = await compressImage(fileToProcess);
+            // FIX: Destructure the returned object to get file, width, and height
+            const { file: compressedFile, width, height } = await compressImage(fileToProcess);
             const compressedSizeKB = Math.round(compressedFile.size / 1024);
             
             console.log(`Compressed image size: ${compressedSizeKB} KB`);
             
-            // Final size check (should be under 400KB now, but just in case)
-            const maxFileSize = 400 * 1024; // 400 KB in bytes
+            const maxFileSize = 400 * 1024;
             if (compressedFile.size > maxFileSize) {
                 alert(`Image still too large after compression: ${compressedSizeKB} KB. Please try a different image.`);
                 if (fileInputRef.current) {
@@ -421,26 +406,25 @@ const ClipboardPage = () => {
                 return;
             }
 
-            await uploadImage(compressedFile);
+            // FIX: Pass dimensions to the upload function
+            await uploadImage(compressedFile, width, height);
             
         } catch (error) {
             console.error('Processing failed:', error);
             alert('Failed to process image. Please try again.');
         }
         
-        // Clear the input so the same file can be selected again
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
     };
 
     // --- Shared upload logic ---
-    const uploadImage = async (file) => {
-        // Check if we're on the client side
+    // FIX: Updated function signature to accept width and height
+    const uploadImage = async (file, width, height) => {
         if (typeof window === 'undefined') return;
         if (!clipboardRef.current) return;
 
-        // Use the center crosshair position for manual uploads too
         const rect = clipboardRef.current.getBoundingClientRect();
         const centerX = (rect.width / 2);
         const centerY = (rect.height / 2);
@@ -448,19 +432,13 @@ const ClipboardPage = () => {
         const uploadY = centerY - panOffset.y;
 
         try {
-            // Check image count and delete the oldest if limit is reached
             if (images.length >= MAX_IMAGES_ALLOWED) {
-                // Sort images by creation date (oldest first)
                 const sortedImages = [...images].sort((a, b) => new Date(a.$createdAt) - new Date(b.$createdAt));
+                const imagesToDelete = images.length - MAX_IMAGES_ALLOWED + 1;
                 
-                // Calculate how many images need to be deleted
-                const imagesToDelete = images.length - MAX_IMAGES_ALLOWED + 1; // +1 for the new image being added
-                
-                // Delete the oldest images
                 for (let i = 0; i < imagesToDelete; i++) {
                     const oldestImage = sortedImages[i];
                     try {
-                        // Delete from Appwrite DB and Storage
                         await databases.deleteDocument(DATABASE_ID, IMAGE_COLLECTION_ID, oldestImage.$id);
                         await storage.deleteFile(IMAGE_BUCKET_ID, oldestImage.fileId);
                     } catch (deleteError) {
@@ -469,31 +447,34 @@ const ClipboardPage = () => {
                 }
             }
 
-            // Public permissions for anonymous access
             const permissions = [
                 Permission.read(Role.any()),
                 Permission.update(Role.any()),
                 Permission.delete(Role.any()),
             ];
 
-            // Upload the new image file to Appwrite Storage
             const fileResponse = await storage.createFile(
                 IMAGE_BUCKET_ID, 
                 ID.unique(), 
                 file,
                 permissions
             );
+            
+            // FIX: Prepare document data, including width and height if available
+            const documentData = {
+                userId: 'anonymous',
+                fileId: fileResponse.$id,
+                x: Math.round(uploadX),
+                y: Math.round(uploadY),
+                ...(width && { width: Math.round(width) }),
+                ...(height && { height: Math.round(height) }),
+            };
 
             await databases.createDocument(
                 DATABASE_ID,
                 IMAGE_COLLECTION_ID,
                 ID.unique(),
-                {
-                    userId: 'anonymous', // Set a default userId for anonymous users
-                    fileId: fileResponse.$id,
-                    x: Math.round(uploadX),
-                    y: Math.round(uploadY),
-                },
+                documentData,
                 permissions
             );
         } catch (error) {
@@ -508,15 +489,19 @@ const ClipboardPage = () => {
             const response = await databases.listDocuments(
                 DATABASE_ID,
                 IMAGE_COLLECTION_ID,
-                [Query.limit(100)] // Fetch all images from all users
+                [Query.limit(100)]
             );
-            for (const doc of response.documents) {
-                console.log(storage.getFileView(IMAGE_BUCKET_ID, doc.fileId))
-            }
-            const mappedImages = response.documents.map(doc => ({
-                ...doc,
-                src: storage.getFileView(IMAGE_BUCKET_ID, doc.fileId)
-            }));
+            
+            console.log(`Found ${response.documents.length} images in database`);
+            
+            const mappedImages = response.documents.map(doc => {
+                const imageUrl = storage.getFileView(IMAGE_BUCKET_ID, doc.fileId);
+                return {
+                    ...doc,
+                    src: imageUrl
+                };
+            });
+            
             setImages(mappedImages);
         } catch (error) {
             console.error('Failed to fetch images:', error);
@@ -524,7 +509,6 @@ const ClipboardPage = () => {
     }, []);
 
     useEffect(() => {
-        // Fetch images immediately when component mounts
         fetchImages();
 
         const unsubscribe = client.subscribe(
@@ -542,7 +526,7 @@ const ClipboardPage = () => {
 
     // --- Canvas Panning Logic ---
     const handlePanMouseDown = (e) => {
-        if (e.target !== clipboardRef.current) return; // Only pan on background
+        if (e.target !== clipboardRef.current) return;
         e.preventDefault();
         panStartRef.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y };
         setIsPanning(true);
@@ -554,7 +538,6 @@ const ClipboardPage = () => {
         const newPanX = e.clientX - panStartRef.current.x;
         const newPanY = e.clientY - panStartRef.current.y;
         
-        // Prevent extreme values that could break CSS transforms
         const MAX_PAN_VALUE = 50000;
         const clampedX = Math.max(-MAX_PAN_VALUE, Math.min(MAX_PAN_VALUE, newPanX));
         const clampedY = Math.max(-MAX_PAN_VALUE, Math.min(MAX_PAN_VALUE, newPanY));
@@ -584,24 +567,21 @@ const ClipboardPage = () => {
         e.preventDefault();
         setIsDraggingOver(false);
         
-        // Check if we're on the client side
         if (typeof window === 'undefined') return;
         if (!clipboardRef.current) return;
 
         const originalFile = e.dataTransfer.files[0];
         if (!originalFile) return;
 
-        // Check if it's an image file (including HEIC)
         const isImage = originalFile.type.startsWith('image/') || 
-                       originalFile.name.toLowerCase().endsWith('.heic') ||
-                       originalFile.name.toLowerCase().endsWith('.heif');
+                          originalFile.name.toLowerCase().endsWith('.heic') ||
+                          originalFile.name.toLowerCase().endsWith('.heif');
         
         if (!isImage) return;
 
         try {
             let fileToProcess = originalFile;
             
-            // Convert HEIC to JPEG first if needed
             if (originalFile.name.toLowerCase().endsWith('.heic') || 
                 originalFile.name.toLowerCase().endsWith('.heif') ||
                 originalFile.type === 'image/heic' ||
@@ -612,24 +592,23 @@ const ClipboardPage = () => {
                 console.log('HEIC conversion successful');
             }
             
-            // Show compression in progress
             const originalSizeKB = Math.round(fileToProcess.size / 1024);
             console.log(`Original dropped image size: ${originalSizeKB} KB`);
             
-            // Compress the image
-            const compressedFile = await compressImage(fileToProcess);
+            // FIX: Destructure the returned object to get file, width, and height
+            const { file: compressedFile, width, height } = await compressImage(fileToProcess);
             const compressedSizeKB = Math.round(compressedFile.size / 1024);
             
             console.log(`Compressed dropped image size: ${compressedSizeKB} KB`);
             
-            // Final size check (should be under 400KB now, but just in case)
-            const maxFileSize = 400 * 1024; // 400 KB in bytes
+            const maxFileSize = 400 * 1024;
             if (compressedFile.size > maxFileSize) {
                 alert(`Image still too large after compression: ${compressedSizeKB} KB. Please try a different image.`);
                 return;
             }
-
-            await uploadImage(compressedFile);
+            
+            // FIX: Pass dimensions to the upload function
+            await uploadImage(compressedFile, width, height);
             
         } catch (error) {
             console.error('Processing failed:', error);
@@ -643,7 +622,7 @@ const ClipboardPage = () => {
             className="w-screen h-screen overflow-hidden bg-gray-800 text-white select-none relative touch-none"
             onMouseMove={handlePanMouseMove}
             onMouseUp={handlePanMouseUp}
-            onMouseLeave={handlePanMouseUp} // Stop panning if mouse leaves window
+            onMouseLeave={handlePanMouseUp}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -666,18 +645,31 @@ const ClipboardPage = () => {
                         style={{
                             left: `${image.x}px`,
                             top: `${image.y}px`,
-                            maxWidth: '120px',
-                            maxHeight: '120px',
                         }}
                     >
-                         <Image
+                        <img
                             src={image.src}
                             alt="user upload"
-                            width={120}
-                            height={120}
-                            className="pointer-events-none w-full h-full object-contain"
-                            style={{ maxWidth: '120px', maxHeight: '120px' }}
-                            unoptimized={true}
+                            // FIX: Add width and height attributes.
+                            // This allows the browser to reserve space before the image loads,
+                            // preventing the 0x0 render size issue on mobile.
+                            width={image.width}
+                            height={image.height}
+                            className="pointer-events-none max-w-none max-h-none"
+                            style={{ 
+                                display: 'block',
+                                // FIX: This min-width/height now acts as a fallback for older images
+                                // in your DB that don't have width/height attributes stored.
+                                minWidth: '50px',
+                                minHeight: '50px'
+                            }}
+                            onLoad={(e) => {
+                                console.log('Image loaded successfully:', image.src);
+                                console.log('Image dimensions:', e.target.naturalWidth, 'x', e.target.naturalHeight);
+                            }}
+                            onError={(e) => {
+                                console.error('Failed to load image:', image.src);
+                            }}
                         />
                     </div>
                 ))}
@@ -688,6 +680,7 @@ const ClipboardPage = () => {
                 <div className="text-right">
                     <p className="font-semibold text-sm sm:text-base">Anonymous User</p>
                     <p className="text-xs sm:text-sm text-gray-400">Images: {images.length} / {MAX_IMAGES_ALLOWED}</p>
+                    <p className="text-xs text-green-400">Rendering: {images.filter(img => img.src).length} images</p>
                 </div>
             </div>
 
@@ -722,13 +715,9 @@ const ClipboardPage = () => {
             {/* --- Center Crosshair/Target --- */}
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
                 <div className="relative">
-                    {/* Horizontal line */}
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-6 sm:w-8 h-0.5 bg-red-500 opacity-80"></div>
-                    {/* Vertical line */}
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0.5 h-6 sm:h-8 bg-red-500 opacity-80"></div>
-                    {/* Center dot */}
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-red-500 rounded-full"></div>
-                    {/* Optional: Outer circle for better visibility */}
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-5 h-5 sm:w-6 sm:h-6 border border-red-500 rounded-full opacity-60"></div>
                 </div>
             </div>
