@@ -253,7 +253,7 @@ export default function HomePage() {
                             </div>
                             <div className="bg-gray-700/50 rounded-lg p-3">
                                 <span className="text-purple-400 font-semibold text-sm">Real-time Updates</span>
-                                <p className="text-gray-400 text-xs mt-1">See others' uploads instantly</p>
+                                <p className="text-gray-400 text-xs mt-1">See others&apos; uploads instantly</p>
                             </div>
                             <div className="bg-gray-700/50 rounded-lg p-3">
                                 <span className="text-green-400 font-semibold text-sm">No Registration</span>
