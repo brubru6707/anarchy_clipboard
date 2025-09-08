@@ -189,8 +189,6 @@ const ClipboardPage = () => {
     const acceleration = 1.1; // Velocity multiplier per step
     
     const startMovement = (direction) => {
-        // Disable movement when not at 100% zoom
-        if (zoomLevel !== 1) return;
         if (movementState.isMoving && movementState.direction === direction) return;
         
         // Clear any existing intervals
@@ -447,10 +445,22 @@ const ClipboardPage = () => {
         if (!clipboardRef.current) return;
 
         const rect = clipboardRef.current.getBoundingClientRect();
-        const centerX = (rect.width / 2);
-        const centerY = (rect.height / 2);
-        const uploadX = centerX - panOffset.x;
-        const uploadY = centerY - panOffset.y;
+        
+        // Calculate the world coordinates for the center of the screen
+        // The center of the screen in world coordinates is where the crosshair points
+        const screenCenterX = rect.width / 2;
+        const screenCenterY = rect.height / 2;
+        
+        // Convert screen center to world coordinates by reversing the transform
+        // Since transform is: scale(zoomLevel) translate(panOffset.x, panOffset.y)
+        // World coordinates = (screen coordinates - panOffset) / zoomLevel
+        const worldX = (screenCenterX - panOffset.x) / zoomLevel;
+        const worldY = (screenCenterY - panOffset.y) / zoomLevel;
+        console.log("worldX, worldY:", worldX, worldY);
+        console.log("screenCenterX, screenCenterY:", screenCenterX, screenCenterY);
+        
+        const uploadX = worldX;
+        const uploadY = worldY;
 
         try {
             if (images.length >= MAX_IMAGES_ALLOWED) {
@@ -546,8 +556,6 @@ const ClipboardPage = () => {
 
     // --- Canvas Panning Logic ---
     const handlePanMouseDown = (e) => {
-        // Disable panning when not at 100% zoom
-        if (zoomLevel !== 1) return;
         if (e.target !== clipboardRef.current) return;
         e.preventDefault();
         panStartRef.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y };
@@ -555,8 +563,6 @@ const ClipboardPage = () => {
     };
 
     const handlePanMouseMove = (e) => {
-        // Disable panning when not at 100% zoom
-        if (zoomLevel !== 1) return;
         if (!isPanning) return;
         e.preventDefault();
         const newPanX = e.clientX - panStartRef.current.x;
@@ -657,12 +663,10 @@ const ClipboardPage = () => {
             <div
                 ref={clipboardRef}
                 className={`w-full h-full absolute top-0 left-0 transition-transform duration-100 ease-linear touch-pan-x touch-pan-y ${
-                    zoomLevel === 1 
-                        ? (isPanning ? 'cursor-grabbing' : 'cursor-grab')
-                        : 'cursor-not-allowed'
+                    isPanning ? 'cursor-grabbing' : 'cursor-grab'
                 }`}
                 style={{ 
-                    transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                    transform: ` scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`,
                     transformOrigin: 'center center'
                 }}
                 onMouseDown={handlePanMouseDown}
@@ -753,17 +757,8 @@ const ClipboardPage = () => {
             </div>
 
             <div className="absolute bottom-32 left-2 sm:bottom-4 sm:left-4 bg-gray-900/90 p-2 sm:p-3 rounded-lg shadow-lg text-gray-300 text-xs sm:text-sm max-w-[calc(100vw-120px)] sm:max-w-none">
-                {zoomLevel === 1 ? (
-                    <>
-                        <p className="hidden sm:block">Use D-pad or drag the background to pan.</p>
-                        <p className="sm:hidden">Drag to pan or use D-pad.</p>
-                    </>
-                ) : (
-                    <>
-                        <p className="hidden sm:block text-orange-400">⚠️ Panning disabled - Return to 100% zoom to move around</p>
-                        <p className="sm:hidden text-orange-400">⚠️ Panning disabled at this zoom</p>
-                    </>
-                )}
+                <p className="hidden sm:block">Use D-pad or drag the background to pan.</p>
+                <p className="sm:hidden">Drag to pan or use D-pad.</p>
                 <p className="hidden sm:block">Drop images or use &quot;Choose Image&quot; button.</p>
                 <p className="sm:hidden">Drop/choose images at crosshair.</p>
                 <p className="text-yellow-400">Images auto-compressed to &lt;400KB</p>
@@ -774,12 +769,7 @@ const ClipboardPage = () => {
                 <div className="flex gap-1 sm:gap-2 mt-1 sm:mt-2">
                     <button 
                         onClick={() => navigateToCoordinates(0, 0)}
-                        disabled={zoomLevel !== 1}
-                        className={`px-2 py-1 text-white rounded text-xs transition-colors min-h-[36px] touch-manipulation ${
-                            zoomLevel === 1 
-                                ? 'bg-green-600 hover:bg-green-700' 
-                                : 'bg-gray-600 cursor-not-allowed opacity-50'
-                        }`}
+                        className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs transition-colors min-h-[36px] touch-manipulation"
                     >
                         <span className="hidden sm:inline">Go to (0,0)</span>
                         <span className="sm:hidden">Origin</span>
@@ -831,15 +821,12 @@ const ClipboardPage = () => {
                             e.preventDefault();
                             stopMovement();
                         }}
-                        disabled={zoomLevel !== 1}
                         className={`absolute top-0 left-1/2 transform -translate-x-1/2 w-7 h-7 sm:w-8 sm:h-8 ${
-                            zoomLevel !== 1
-                                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                                : movementState.isMoving && movementState.direction === 'up' 
-                                    ? 'bg-blue-600' 
-                                    : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
+                            movementState.isMoving && movementState.direction === 'up' 
+                                ? 'bg-blue-600' 
+                                : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
                         } text-white rounded-md flex items-center justify-center transition-colors select-none touch-manipulation text-sm sm:text-base`}
-                        title={zoomLevel !== 1 ? "Movement disabled - return to 100% zoom" : "Move Up (Hold for acceleration)"}
+                        title="Move Up (Hold for acceleration)"
                     >
                         ↑
                     </button>
@@ -857,22 +844,19 @@ const ClipboardPage = () => {
                             e.preventDefault();
                             stopMovement();
                         }}
-                        disabled={zoomLevel !== 1}
                         className={`absolute left-0 top-1/2 transform -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 ${
-                            zoomLevel !== 1
-                                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                                : movementState.isMoving && movementState.direction === 'left' 
-                                    ? 'bg-blue-600' 
-                                    : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
+                            movementState.isMoving && movementState.direction === 'left' 
+                                ? 'bg-blue-600' 
+                                : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
                         } text-white rounded-md flex items-center justify-center transition-colors select-none touch-manipulation text-sm sm:text-base`}
-                        title={zoomLevel !== 1 ? "Movement disabled - return to 100% zoom" : "Move Left (Hold for acceleration)"}
+                        title="Move Left (Hold for acceleration)"
                     >
                         ←
                     </button>
                     
                     {/* Center circle with velocity indicator */}
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-5 h-5 sm:w-6 sm:h-6 bg-gray-800 rounded-full border-2 border-gray-600 flex items-center justify-center">
-                        {movementState.isMoving && zoomLevel === 1 && (
+                        {movementState.isMoving && (
                             <div 
                                 className="bg-blue-500 rounded-full transition-all duration-100"
                                 style={{
@@ -896,15 +880,12 @@ const ClipboardPage = () => {
                             e.preventDefault();
                             stopMovement();
                         }}
-                        disabled={zoomLevel !== 1}
                         className={`absolute right-0 top-1/2 transform -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 ${
-                            zoomLevel !== 1
-                                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                                : movementState.isMoving && movementState.direction === 'right' 
-                                    ? 'bg-blue-600' 
-                                    : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
+                            movementState.isMoving && movementState.direction === 'right' 
+                                ? 'bg-blue-600' 
+                                : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
                         } text-white rounded-md flex items-center justify-center transition-colors select-none touch-manipulation text-sm sm:text-base`}
-                        title={zoomLevel !== 1 ? "Movement disabled - return to 100% zoom" : "Move Right (Hold for acceleration)"}
+                        title="Move Right (Hold for acceleration)"
                     >
                         →
                     </button>
@@ -922,15 +903,12 @@ const ClipboardPage = () => {
                             e.preventDefault();
                             stopMovement();
                         }}
-                        disabled={zoomLevel !== 1}
                         className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 w-7 h-7 sm:w-8 sm:h-8 ${
-                            zoomLevel !== 1
-                                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                                : movementState.isMoving && movementState.direction === 'down' 
-                                    ? 'bg-blue-600' 
-                                    : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
+                            movementState.isMoving && movementState.direction === 'down' 
+                                ? 'bg-blue-600' 
+                                : 'bg-gray-700 hover:bg-gray-600 active:bg-gray-600'
                         } text-white rounded-md flex items-center justify-center transition-colors select-none touch-manipulation text-sm sm:text-base`}
-                        title={zoomLevel !== 1 ? "Movement disabled - return to 100% zoom" : "Move Down (Hold for acceleration)"}
+                        title="Move Down (Hold for acceleration)"
                     >
                         ↓
                     </button>
