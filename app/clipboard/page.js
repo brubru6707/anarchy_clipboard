@@ -524,15 +524,29 @@ const ClipboardPage = () => {
         const uploadY = worldY;
 
         try {
-            if (images.length >= MAX_IMAGES_ALLOWED) {
-                const sortedImages = [...images].sort((a, b) => new Date(a.$createdAt) - new Date(b.$createdAt));
-                const imagesToDelete = images.length - MAX_IMAGES_ALLOWED + 1;
+            // First, get the current actual count from the database
+            const currentResponse = await databases.listDocuments(
+                DATABASE_ID,
+                IMAGE_COLLECTION_ID,
+                [Query.limit(200)] // Get more than max to see the full scope
+            );
+            
+            const currentImages = currentResponse.documents;
+            console.log(`Current database count: ${currentImages.length} images`);
+            
+            // If we're at or over the limit, delete enough to make room for the new image
+            if (currentImages.length >= MAX_IMAGES_ALLOWED) {
+                const sortedImages = currentImages.sort((a, b) => new Date(a.$createdAt) - new Date(b.$createdAt));
+                const imagesToDelete = currentImages.length - MAX_IMAGES_ALLOWED + 1; // +1 for the new image
+                
+                console.log(`Need to delete ${imagesToDelete} oldest images to make room`);
                 
                 for (let i = 0; i < imagesToDelete; i++) {
                     const oldestImage = sortedImages[i];
                     try {
                         await databases.deleteDocument(DATABASE_ID, IMAGE_COLLECTION_ID, oldestImage.$id);
                         await storage.deleteFile(IMAGE_BUCKET_ID, oldestImage.fileId);
+                        console.log(`Deleted old image ${i + 1}/${imagesToDelete}:`, oldestImage.$id);
                     } catch (deleteError) {
                         console.error('Failed to delete old image:', deleteError);
                     }
@@ -552,8 +566,6 @@ const ClipboardPage = () => {
                 permissions
             );
             
-            // FIX: Prepare document data - only include basic required fields
-            // Width and height are not stored in the database to avoid schema issues
             const documentData = {
                 userId: 'anonymous',
                 fileId: fileResponse.$id,
@@ -568,6 +580,8 @@ const ClipboardPage = () => {
                 documentData,
                 permissions
             );
+            
+            console.log('Successfully uploaded new image at:', uploadX, uploadY);
         } catch (error) {
             console.error("Failed to upload image:", error);
             alert("Failed to upload image. Please try again.");
