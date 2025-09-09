@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from 'react';
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 // Correcting the import path to be an absolute path from the root of the app directory
 import { client, account, databases, storage, ID, Query, Permission, Role } from '../appwrite';
@@ -129,7 +131,7 @@ const ClipboardPage = () => {
     const velocityTimeoutRef = useRef(null);
     const fileInputRef = useRef(null);
 
-    // --- Calculate viewport center coordinates ---
+    // --- Calculate viewport center coordinates (throttled) ---
     const updateViewportCenter = useCallback(() => {
         if (clipboardRef.current) {
             const rect = clipboardRef.current.getBoundingClientRect();
@@ -137,7 +139,68 @@ const ClipboardPage = () => {
             const centerY = (rect.height / 2) - panOffset.y;
             setViewportCenter({ x: Math.round(centerX), y: Math.round(centerY) });
         }
-    }, [panOffset]);
+    }, [panOffset.x, panOffset.y]);
+
+    // Throttled viewport center updates (reduce frequency)
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            updateViewportCenter();
+        }, 100); // Update every 100ms instead of every frame
+        
+        return () => clearTimeout(timeoutId);
+    }, [panOffset.x, panOffset.y, updateViewportCenter]);
+    const viewportBounds = useMemo(() => {
+        if (!clipboardRef.current) return null;
+        
+        const rect = clipboardRef.current.getBoundingClientRect();
+        
+        // Calculate the visible area in world coordinates
+        // Add buffer zone to load images slightly outside viewport
+        const bufferZone = 500; // pixels
+        
+        // The key insight: we need to find what world coordinates are currently visible
+        // Given our transform: scale(zoomLevel) translate3d(panOffset.x, panOffset.y, 0)
+        // A point at world coordinate (wx, wy) appears on screen at:
+        // screenX = (wx + panOffset.x) * zoomLevel
+        // screenY = (wy + panOffset.y) * zoomLevel
+        //
+        // So to find what world coordinates are visible in the viewport:
+        // wx = (screenX / zoomLevel) - panOffset.x
+        // wy = (screenY / zoomLevel) - panOffset.y
+        
+        const viewportLeft = (0 / zoomLevel) - panOffset.x - bufferZone;
+        const viewportTop = (0 / zoomLevel) - panOffset.y - bufferZone;
+        const viewportRight = (rect.width / zoomLevel) - panOffset.x + bufferZone;
+        const viewportBottom = (rect.height / zoomLevel) - panOffset.y + bufferZone;
+        
+        return {
+            left: viewportLeft,
+            top: viewportTop,
+            right: viewportRight,
+            bottom: viewportBottom
+        };
+    }, [panOffset.x, panOffset.y, zoomLevel]);
+
+    // --- Check if image is in viewport (optimized) ---
+    const visibleImages = useMemo(() => {
+        if (!viewportBounds) return images;
+        
+        return images.filter(image => {
+            // Assume max image size for bounds checking (since we don't store dimensions)
+            const imageSize = 400; // max size we set in CSS
+            
+            const imageLeft = image.x;
+            const imageTop = image.y;
+            const imageRight = image.x + imageSize;
+            const imageBottom = image.y + imageSize;
+            
+            // Check if image intersects with viewport
+            return !(imageRight < viewportBounds.left || 
+                    imageLeft > viewportBounds.right || 
+                    imageBottom < viewportBounds.top || 
+                    imageTop > viewportBounds.bottom);
+        });
+    }, [images, viewportBounds]);
 
     // Update viewport center whenever pan offset changes
     useEffect(() => {
@@ -183,12 +246,12 @@ const ClipboardPage = () => {
         setZoomLevel(prev => Math.max(minZoom, Math.min(maxZoom, prev + delta)));
     };
 
-    // --- Directional movement controls with velocity ---
+    // --- Directional movement controls with velocity (optimized) ---
     const baseSpeed = 5; // Base movement speed
     const maxSpeed = 50; // Maximum movement speed
     const acceleration = 1.1; // Velocity multiplier per step
     
-    const startMovement = (direction) => {
+    const startMovement = useCallback((direction) => {
         if (movementState.isMoving && movementState.direction === direction) return;
         
         // Clear any existing intervals
@@ -205,7 +268,7 @@ const ClipboardPage = () => {
             isMoving: true
         });
         
-        // Start movement loop
+        // Start movement loop with throttled updates
         movementIntervalRef.current = setInterval(() => {
             setMovementState(prev => {
                 const newVelocity = Math.min(prev.velocity * acceleration, maxSpeed);
@@ -236,10 +299,10 @@ const ClipboardPage = () => {
                 
                 return { ...prev, velocity: newVelocity };
             });
-        }, 16); // ~60fps for smooth movement
-    };
+        }, 32); // Reduced from 16ms to 32ms (~30fps instead of 60fps for smoother performance)
+    }, [movementState.isMoving, movementState.direction]);
     
-    const stopMovement = () => {
+    const stopMovement = useCallback(() => {
         if (movementIntervalRef.current) {
             clearInterval(movementIntervalRef.current);
             movementIntervalRef.current = null;
@@ -254,7 +317,7 @@ const ClipboardPage = () => {
             velocity: 0,
             isMoving: false
         });
-    };
+    }, []);
     
     // Cleanup intervals on unmount
     useEffect(() => {
@@ -448,17 +511,15 @@ const ClipboardPage = () => {
         
         // Calculate the world coordinates for the center of the screen
         // The center of the screen in world coordinates is where the crosshair points
-        const screenCenterX = rect.width / 2;
-        const screenCenterY = rect.height / 2;
-        
-        // Convert screen center to world coordinates by reversing the transform
-        // Since transform is: scale(zoomLevel) translate(panOffset.x, panOffset.y)
-        // World coordinates = (screen coordinates - panOffset) / zoomLevel
-        const worldX = (screenCenterX - panOffset.x) / zoomLevel;
-        const worldY = (screenCenterY - panOffset.y) / zoomLevel;
+        const screenCenterX = rect.width / 2 * 1/zoomLevel;
+        const screenCenterY = rect.height / 2 * 1/zoomLevel;
+
+        const worldX = (screenCenterX - panOffset.x) / 1;
+        const worldY = (screenCenterY - panOffset.y) / 1;
         console.log("worldX, worldY:", worldX, worldY);
         console.log("screenCenterX, screenCenterY:", screenCenterX, screenCenterY);
-        
+        console.log("panOffset.x, panOffset.y:", panOffset.x, panOffset.y);
+
         const uploadX = worldX;
         const uploadY = worldY;
 
@@ -662,44 +723,43 @@ const ClipboardPage = () => {
             {/* --- Clipboard / Canvas Area --- */}
             <div
                 ref={clipboardRef}
-                className={`w-full h-full absolute top-0 left-0 transition-transform duration-100 ease-linear touch-pan-x touch-pan-y ${
+                className={`w-full h-full absolute top-0 left-0 touch-pan-x touch-pan-y ${
                     isPanning ? 'cursor-grabbing' : 'cursor-grab'
                 }`}
                 style={{ 
-                    transform: ` scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`,
-                    transformOrigin: 'center center'
+                    transform: `scale(${zoomLevel}) translate3d(${panOffset.x}px, ${panOffset.y}px, 0)`,
+                    transformOrigin: 'center center',
+                    willChange: 'transform', // Hint to browser for GPU acceleration
                 }}
                 onMouseDown={handlePanMouseDown}
                 onTouchStart={handlePanMouseDown}
             >
-                {/* Render Images */}
-                {images.map(image => (
+                {/* Render Images - Only show images in viewport (optimized) */}
+                {visibleImages.map(image => (
                     <div
                         key={image.$id}
                         className="absolute p-1 bg-white rounded-md shadow-lg touch-manipulation"
                         style={{
                             left: `${image.x}px`,
                             top: `${image.y}px`,
+                            transform: 'translateZ(0)', // Force GPU acceleration
                         }}
                     >
                         <img
                             src={image.src}
                             alt="user upload"
-                            // Removed width/height attributes since we're not storing dimensions in DB
-                            // Let images load at their natural compressed size
                             className="pointer-events-none max-w-none max-h-none"
                             style={{ 
                                 display: 'block',
-                                // Set a reasonable max size to prevent huge images on the canvas
                                 maxWidth: '400px',
                                 maxHeight: '400px',
-                                // Maintain aspect ratio
-                                objectFit: 'contain'
+                                objectFit: 'contain',
+                                transform: 'translateZ(0)', // Force GPU acceleration
                             }}
+                            loading="lazy" // Native lazy loading
                             onLoad={(e) => {
-                                console.log('Image loaded successfully:', image.src);
-                                console.log('Image dimensions:', e.target.naturalWidth, 'x', e.target.naturalHeight);
-                                console.log('Displayed dimensions:', e.target.width, 'x', e.target.height);
+                                // Remove console logs in production for better performance
+                                // console.log('Image loaded successfully:', image.src);
                             }}
                             onError={(e) => {
                                 console.error('Failed to load image:', image.src);
@@ -714,7 +774,9 @@ const ClipboardPage = () => {
                 <div className="text-right">
                     <p className="font-semibold text-sm sm:text-base">Anonymous User</p>
                     <p className="text-xs sm:text-sm text-gray-400">Images: {images.length} / {MAX_IMAGES_ALLOWED}</p>
-                    <p className="text-xs text-green-400">Rendering: {images.filter(img => img.src).length} images</p>
+                    <p className="text-xs text-green-400">
+                        Visible: {visibleImages.length} / {images.length}
+                    </p>
                 </div>
             </div>
 
